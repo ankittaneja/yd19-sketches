@@ -7,7 +7,6 @@
  */
 
 #include "WiFi.h"
-#include "ESPAsyncWebServer.h"
 #include <HTTPClient.h>
 #include "ArduinoJson.h"
 
@@ -16,7 +15,9 @@
 //const char* password =  "";
 const char* ssid = "iPhone";
 const char* password =  "Kaktus@2019";
-const char* clientId = "3MVG9fTLmJ60pJ5IkfS_Bcx4Q_80FIko5o7Vw1F6q30smb2ttAbTDE3P4WDcnSk_YYovFOhZay4ea3Y0491nK";
+
+/* Provide Auth details */
+const char* clientId = "3MVG9MHOv_bskkhRWMoOCuaVXBqhIvP0c3fJlDJU06CZoXq7TnsZuoVJTqseqFPKeHhWbPMGytkl_oBq0srtF";
 char *access_token;  
 char *instance_url; 
 
@@ -37,18 +38,20 @@ void setup() {
   
   HTTPClient http;   
   // First Call to get device_code 
-  http.begin("https://login.salesforce.com/services/oauth2/token");  
+  http.begin("https://test.salesforce.com/services/oauth2/token");  
   http.addHeader("Content-Type", "application/x-www-form-urlencoded");
      
   int httpResponseCode = 0;
   char *device_code;
   do {
     char firstPostString[200];
-//    strcpy(firstPostString, "response_type=device_code&client_id=");
-//    strncat(firstPostString, clientId, strlen(clientId));
-//    strcat(firstPostString, "&scope=api");
-//    httpResponseCode = http.POST(firstPostString);   //Send the actual POST request
-    httpResponseCode = http.POST("response_type=device_code&client_id=3MVG9fTLmJ60pJ5IkfS_Bcx4Q_80FIko5o7Vw1F6q30smb2ttAbTDE3P4WDcnSk_YYovFOhZay4ea3Y0491nK&scope=api");
+    strcpy(firstPostString, "response_type=device_code&client_id=");
+    strncat(firstPostString, clientId, strlen(clientId));
+    strcat(firstPostString, "&scope=api");
+//    Serial.print("Str:");
+//    Serial.println(firstPostString);
+    httpResponseCode = http.POST(firstPostString);   //Send the actual POST request
+//    httpResponseCode = http.POST("response_type=device_code&client_id=3MVG9MHOv_bskkhRWMoOCuaVXBqhIvP0c3fJlDJU06CZoXq7TnsZuoVJTqseqFPKeHhWbPMGytkl_oBq0srtF&scope=api");
     if(httpResponseCode > 0){
      
       /* Size of the incoming JSON object-
@@ -69,12 +72,9 @@ void setup() {
         return;
       } else {
         // Get the device code
-//        Serial.print("Device code size:");
-//        Serial.println(strlen(doc["device_code"]));
           device_code = strdup(doc["device_code"]);
-        
           /* Print the user code
-           * to be entered at https://login.salesforce.com/setup/connect
+           * to be entered at https://test.salesforce.com/setup/connect
           */
           const char* user_code = doc["user_code"];
           Serial.print("User code:");
@@ -86,42 +86,44 @@ void setup() {
     }
       http.end();  //Free resources
     } while (httpResponseCode != 200); // Keep asking for User/Device code until successful
+    
     httpResponseCode = 0; 
+    
     delay(2000);
+    
     do {
-      // deloy required so that you can enter the user code at the provided link 
-      delay(15000); 
+      // 30s deloy so that you can enter the user code at the provided link 
+      delay(30000); 
       // Ensure device code is there
       if(strlen(device_code) > 100) {
         //Second Call to get Access token
-        http.begin("https://login.salesforce.com/services/oauth2/token");  
+        http.begin("https://test.salesforce.com/services/oauth2/token");  
         http.addHeader("Content-Type", "application/x-www-form-urlencoded");
         char secondPostString[300];
-        strcpy(secondPostString, "grant_type=device&client_id=3MVG9fTLmJ60pJ5IkfS_Bcx4Q_80FIko5o7Vw1F6q30smb2ttAbTDE3P4WDcnSk_YYovFOhZay4ea3Y0491nK&code=");
+        strcpy(secondPostString, "grant_type=device&client_id=");
+        strncat(secondPostString, clientId, strlen(clientId));
+        strncat(secondPostString, "&code=", 6);
         // Add the provided device code to the string
         strncat(secondPostString, device_code, strlen(device_code)); 
-        Serial.print("PostString:");
-        Serial.println(secondPostString);
+
         httpResponseCode = http.POST(secondPostString);
         String json;
         if(httpResponseCode > 0) {
-        const size_t capacity = JSON_OBJECT_SIZE(7) + 410;
-        DynamicJsonDocument doc(capacity);  
-        json = http.getString();
-        deserializeJson(doc, json);
-        access_token = strdup(doc["access_token"]);
-        instance_url = strdup(doc["instance_url"]);
-        Serial.print("Atoken:");
-        Serial.println(access_token);
-        
-      } else {
-        Serial.println(json);
-      }
+          const size_t capacity = JSON_OBJECT_SIZE(7) + 410;
+          DynamicJsonDocument doc(capacity);  
+          json = http.getString();
+          deserializeJson(doc, json);
+          access_token = strdup(doc["access_token"]);
+          instance_url = strdup(doc["instance_url"]);
+          
+        } else {
+          Serial.println(json);
+        }
         // IF access token received, break.
         if(strlen(access_token) > 100) { break; }
       }
      } while( httpResponseCode != 200);
-     http.end();
+     http.end(); // Free resources when done
    } else {
       Serial.println("Error in WiFi connection");   
    }
@@ -138,9 +140,6 @@ void loop() {
   char token[200];
   strcpy(token, "Bearer ");
   strcat(token, access_token);
-  
-  Serial.print("Bearer:");
-  Serial.println(token);
   Serial.print("TouchValue:");
   Serial.println(touchRead(T0));
   if(touchValue < 30) {
@@ -156,10 +155,8 @@ void loop() {
     String output;
     serializeJson(doc, output);
     HTTPClient http; 
-    Serial.println(instanceUrl);
     http.begin(instanceUrl);
     
-    Serial.println(token);
     http.addHeader("Authorization", token);
     http.addHeader("Content-Type", "application/json");
     int responseCode = http.POST(output);
